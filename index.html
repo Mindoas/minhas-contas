@@ -185,7 +185,17 @@
       <button class="btn-mes" data-mes="1" type="button" aria-label="Próximo mês">▶</button>
     </div>
     <div id="rel-conteudo"></div>
-    <button class="btn btn-secundario btn-bloco nao-imprimir" id="btn-imprimir" type="button">🖨️ Imprimir ou salvar em PDF</button>
+    <button class="btn btn-primario btn-bloco btn-grande" id="btn-imprimir" type="button">🖨️ Imprimir prestação de contas</button>
+  </section>
+
+  <!-- ============ RELATÓRIO: DETALHE DE UMA SEÇÃO ============ -->
+  <section id="tela-rel-detalhe" class="tela com-nav">
+    <header class="topo topo-voltar">
+      <button class="btn-voltar" id="rel-det-voltar" type="button" aria-label="Voltar aos relatórios">
+        <span aria-hidden="true">←</span> Relatórios
+      </button>
+    </header>
+    <div id="rel-det-conteudo"></div>
   </section>
 
   <!-- ============ AJUSTES ============ -->
@@ -239,6 +249,9 @@
     <span id="aviso-texto"></span>
     <button id="aviso-acao" class="aviso-acao oculto" type="button">Desfazer</button>
   </div>
+
+  <!-- ============ ÁREA DE IMPRESSÃO (só aparece no papel) ============ -->
+  <div id="impressao"></div>
 
   <!-- Supabase (versão fixada) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>

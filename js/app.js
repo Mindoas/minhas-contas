@@ -52,7 +52,7 @@
     const ontem = new Date(); ontem.setDate(hoje.getDate() - 1);
     if (mesmoDia(d, hoje)) return 'Hoje';
     if (mesmoDia(d, ontem)) return 'Ontem';
-    return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, (c) => c.toUpperCase());
   }
   function rotuloDiaHora(iso) {
     const d = new Date(iso);
@@ -130,7 +130,8 @@
     $$('.tela').forEach((t) => t.classList.toggle('ativa', t.id === id));
     const comNav = $(id).classList.contains('com-nav');
     $('nav-inferior').classList.toggle('oculto', !comNav);
-    $$('#nav-inferior button').forEach((b) => b.classList.toggle('ativo', b.dataset.tela === id));
+    const alvoNav = id === 'tela-rel-detalhe' ? 'tela-relatorios' : id;
+    $$('#nav-inferior button').forEach((b) => b.classList.toggle('ativo', b.dataset.tela === alvoNav));
     window.scrollTo(0, 0);
     if (id === 'tela-inicio') carregarInicio();
     if (id === 'tela-historico') carregarHistorico();
@@ -644,6 +645,7 @@
       estado.registro = null;
       if (history.state?.registro) history.replaceState(null, '');
       mostrarTela(voltarPara);
+      if (voltarPara === 'tela-rel-detalhe') recarregarRelDetalhe();
       mostrarAviso(msg);
     } catch (e) {
       if (fotoNova) apagarFoto(fotoNova);
@@ -745,14 +747,21 @@
     if (!l) return;
     const c = categoria(l.categoria_id);
     const d = new Date(l.data);
+    const linha = (a, b) => `<div class="detalhe-linha"><span>${a}</span><span>${b}</span></div>`;
+    const criado = l.created_at ? new Date(l.created_at) : null;
     let corpo = `
       <p style="text-align:center;font-size:2rem;font-weight:800;margin:0 0 8px" class="${l.tipo === 'gasto' ? 'cor-gasto' : 'cor-entrada'}">
-        ${l.tipo === 'gasto' ? '−' : '+'} ${moeda(l.valor)}</p>
-      <div class="detalhe-linha"><span>Tipo</span><span>${l.tipo === 'gasto' ? 'Gasto' : 'Dinheiro recebido'}</span></div>
-      <div class="detalhe-linha"><span>Categoria</span><span>${c.icone} ${escapar(c.nome)}</span></div>`;
-    if (l.forma_pagamento) corpo += `<div class="detalhe-linha"><span>Pagamento</span><span>${FORMAS[l.forma_pagamento].icone} ${FORMAS[l.forma_pagamento].nome}</span></div>`;
-    corpo += `<div class="detalhe-linha"><span>Dia</span><span>${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>`;
-    if (l.descricao) corpo += `<div class="detalhe-linha"><span>Observação</span><span>${escapar(l.descricao)}</span></div>`;
+        ${l.tipo === 'gasto' ? '−' : '+'} ${moeda(l.valor)}</p>`;
+    corpo += linha('Tipo', l.tipo === 'gasto' ? 'Gasto' : 'Dinheiro recebido');
+    corpo += linha('Valor', moeda(l.valor));
+    corpo += linha(l.tipo === 'gasto' ? 'Categoria' : 'Origem', `${c.icone} ${escapar(c.nome)}`);
+    if (l.tipo === 'gasto') corpo += linha('Forma de pagamento', l.forma_pagamento ? `${FORMAS[l.forma_pagamento].icone} ${FORMAS[l.forma_pagamento].nome}` : '—');
+    corpo += linha('Descrição', l.descricao ? escapar(l.descricao) : '<span class="item-info">Sem descrição</span>');
+    corpo += linha('Dia', d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }));
+    corpo += linha('Horário', d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    if (criado && Math.abs(criado - d) > 60 * 60 * 1000) corpo += linha('Registrado no app em', `${criado.toLocaleDateString('pt-BR')} às ${criado.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    corpo += linha('Foto da notinha', l.foto_path ? 'Sim' : 'Não');
+    corpo += linha('Número do registro', `#${l.id}`);
     if (l.foto_path) corpo += `<p class="item-info" style="margin:12px 0 0;text-align:center">Carregando foto…</p><div id="detalhe-foto"></div>`;
 
     abrirModal({
@@ -826,6 +835,7 @@
     if (id === 'tela-inicio') carregarInicio();
     if (id === 'tela-historico') carregarHistorico();
     if (id === 'tela-relatorios') carregarRelatorios();
+    if (id === 'tela-rel-detalhe') recarregarRelDetalhe();
   }
 
   // ---------------------------------------------------------
@@ -904,19 +914,40 @@
   // ---------------------------------------------------------
   // Relatórios
   // ---------------------------------------------------------
-  function somarPorCategoria(lista, tipo) {
-    const mapa = {};
-    lista.filter((l) => l.tipo === tipo).forEach((l) => { mapa[l.categoria_id] = (mapa[l.categoria_id] || 0) + Number(l.valor); });
-    return Object.entries(mapa).map(([id, total]) => ({ cat: categoria(Number(id)), total })).sort((a, b) => b.total - a.total);
+  const somar = (lista, tipo) => lista.filter((l) => !tipo || l.tipo === tipo).reduce((s, l) => s + Number(l.valor), 0);
+  const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+  const pctDe = (v, total) => (total ? Math.round((v / total) * 1000) / 10 : 0);
+  const fmtPct = (p) => `${String(p).replace('.', ',')}%`;
+  const dataCurta = (iso) => new Date(iso).toLocaleDateString('pt-BR');
+  const horaCurta = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const nomeForma = (f) => (FORMAS[f] ? FORMAS[f].nome : '—');
+
+  function agrupar(lista, chaveFn, infoFn) {
+    const mapa = new Map();
+    lista.forEach((l) => { const k = chaveFn(l); if (!mapa.has(k)) mapa.set(k, []); mapa.get(k).push(l); });
+    return Array.from(mapa, ([chave, itens]) => ({ chave, info: infoFn(chave), itens, total: somar(itens) }))
+      .sort((a, b) => b.total - a.total);
   }
-  function barrasHTML(itens, total) {
-    return itens.map(({ cat, total: v }) => {
-      const pct = total ? Math.round((v / total) * 100) : 0;
-      return `<div class="barra-item">
-        <div class="barra-topo"><span>${cat.icone} ${escapar(cat.nome)}</span><span>${moeda(v)} <span class="barra-pct">(${pct}%)</span></span></div>
-        <div class="barra-fundo"><div class="barra" style="width:${Math.max(pct, 2)}%;background:${cat.cor}"></div></div>
-      </div>`;
+  const porCategoria = (lista, tipo) => agrupar(lista.filter((l) => l.tipo === tipo), (l) => l.categoria_id, (id) => categoria(id));
+  const porForma = (lista) => agrupar(lista.filter((l) => l.tipo === 'gasto'), (l) => l.forma_pagamento,
+    (f) => ({ icone: FORMAS[f] ? FORMAS[f].icone : '❔', nome: nomeForma(f), cor: '#2f6f8f' }));
+
+  function barrasHTML(grupos, total, secao) {
+    return grupos.map((g, i) => {
+      const pct = pctDe(g.total, total);
+      return `<button class="barra-item" type="button" data-secao="${secao}" data-indice="${i}">
+        <span class="barra-topo"><span>${g.info.icone} ${escapar(g.info.nome)}</span><span>${moeda(g.total)} <span class="barra-pct">(${fmtPct(pct)})</span></span></span>
+        <span class="barra-fundo"><span class="barra" style="width:${Math.max(pct, 2)}%;background:${g.info.cor}"></span></span>
+        <span class="barra-rodape"><span>${plural(g.itens.length, 'registro', 'registros')}</span><span>Ver detalhes ›</span></span>
+      </button>`;
     }).join('');
+  }
+
+  function secaoHTML(chave, titulo, conteudo) {
+    return `<div class="cartao">
+      <div class="secao-cab"><h2 class="secao-titulo">${titulo}</h2>
+      <button class="btn-ver-tudo" type="button" data-secao-toda="${chave}">Ver tudo ›</button></div>
+      ${conteudo}</div>`;
   }
 
   async function carregarRelatorios() {
@@ -926,25 +957,36 @@
     const caixa = $('rel-conteudo');
     caixa.innerHTML = '<p class="vazio">Carregando…</p>';
 
-    const { data, error } = await sb.from('lancamentos').select('tipo, valor, categoria_id, forma_pagamento, data')
-      .gte('data', inicioMes(anterior).toISOString()).lt('data', fimMes(m).toISOString());
+    const { data, error } = await sb.from('lancamentos').select('*')
+      .gte('data', inicioMes(anterior).toISOString()).lt('data', fimMes(m).toISOString())
+      .order('data', { ascending: true });
     if (error) { caixa.innerHTML = `<p class="vazio">${mensagemErro(error)}</p>`; return; }
 
     const doMes = data.filter((l) => new Date(l.data) >= inicioMes(m));
     const doAnterior = data.filter((l) => new Date(l.data) < inicioMes(m));
+    guardarNoCache(doMes);
+
+    const entrou = somar(doMes, 'entrada'), saiu = somar(doMes, 'gasto');
+    const gastos = porCategoria(doMes, 'gasto');
+    const formas = porForma(doMes);
+    const entradas = porCategoria(doMes, 'entrada');
+    estado.rel = {
+      mes: m, anterior, doMes, doAnterior, entrou, saiu,
+      secoes: {
+        gastos:   { titulo: 'Para onde foi o dinheiro', grupos: gastos, total: saiu, tipo: 'gasto' },
+        formas:   { titulo: 'Como você pagou', grupos: formas, total: saiu, tipo: 'gasto' },
+        entradas: { titulo: 'De onde veio o dinheiro', grupos: entradas, total: entrou, tipo: 'entrada' },
+        todos:    { titulo: 'Todos os registros do mês', grupos: [{ info: { icone: '📋', nome: 'Todos os registros', cor: '#2f6f8f' }, itens: doMes, total: entrou + saiu }], total: entrou + saiu, tipo: 'todos' }
+      }
+    };
+
     if (!doMes.length) { caixa.innerHTML = '<p class="vazio">Nenhum registro neste mês.</p>'; return; }
 
-    const soma = (lista, tipo) => lista.filter((l) => l.tipo === tipo).reduce((s, l) => s + Number(l.valor), 0);
-    const entrou = soma(doMes, 'entrada'), saiu = soma(doMes, 'gasto');
-    const saiuAntes = soma(doAnterior, 'gasto');
-    const gastos = somarPorCategoria(doMes, 'gasto');
-    const entradas = somarPorCategoria(doMes, 'entrada');
+    const saiuAntes = somar(doAnterior, 'gasto');
     const nomeAnterior = anterior.toLocaleDateString('pt-BR', { month: 'long' });
     const verboMes = ehMesAtual(m) ? 'Neste mês' : `Em ${m.toLocaleDateString('pt-BR', { month: 'long' })}`;
-
-    const frases = [];
-    frases.push(`${verboMes} você gastou <strong>${moeda(saiu)}</strong> e recebeu <strong>${moeda(entrou)}</strong>.`);
-    if (gastos.length) frases.push(`O que mais pesou foi <strong>${gastos[0].cat.icone} ${escapar(gastos[0].cat.nome)}</strong> (${moeda(gastos[0].total)}).`);
+    const frases = [`${verboMes} você gastou <strong>${moeda(saiu)}</strong> e recebeu <strong>${moeda(entrou)}</strong>.`];
+    if (gastos.length) frases.push(`O que mais pesou foi <strong>${gastos[0].info.icone} ${escapar(gastos[0].info.nome)}</strong> (${moeda(gastos[0].total)}).`);
     if (saiuAntes > 0) {
       const dif = saiu - saiuAntes;
       if (Math.abs(dif) < 0.01) frases.push(`Você gastou o mesmo que em ${nomeAnterior}.`);
@@ -953,26 +995,252 @@
     }
     if (entrou - saiu < 0) frases.push('⚠️ Atenção: saiu mais dinheiro do que entrou.');
 
-    const formas = {};
-    doMes.filter((l) => l.tipo === 'gasto').forEach((l) => { formas[l.forma_pagamento] = (formas[l.forma_pagamento] || 0) + Number(l.valor); });
-
     let html = `
       <div class="cartao">${frases.map((f) => `<p class="frase">${f}</p>`).join('')}</div>
-      <div class="cartao resumo">
-        <div class="resumo-linha"><span class="resumo-rotulo">Dinheiro que entrou</span><strong class="resumo-valor cor-entrada">${moeda(entrou)}</strong></div>
-        <div class="resumo-linha"><span class="resumo-rotulo">Dinheiro que saiu</span><strong class="resumo-valor cor-gasto">${moeda(saiu)}</strong></div>
-        <div class="resumo-linha resumo-total"><span class="resumo-rotulo">Sobrou</span><strong class="resumo-valor ${entrou - saiu < 0 ? 'cor-gasto' : 'cor-entrada'}">${moeda(entrou - saiu)}</strong></div>
-      </div>`;
-    if (gastos.length) html += `<div class="cartao"><h2 class="secao-titulo">Para onde foi o dinheiro</h2>${barrasHTML(gastos, saiu)}</div>`;
-    if (Object.keys(formas).length) {
-      const itens = Object.entries(formas).sort((a, b) => b[1] - a[1])
-        .map(([f, v]) => ({ cat: { icone: FORMAS[f].icone, nome: FORMAS[f].nome, cor: '#2f6f8f' }, total: v }));
-      html += `<div class="cartao"><h2 class="secao-titulo">Como você pagou</h2>${barrasHTML(itens, saiu)}</div>`;
-    }
-    if (entradas.length) html += `<div class="cartao"><h2 class="secao-titulo">De onde veio o dinheiro</h2>${barrasHTML(entradas, entrou)}</div>`;
+      <button class="cartao resumo resumo-botao" type="button" data-secao-toda="todos">
+        <span class="resumo-linha"><span class="resumo-rotulo">Dinheiro que entrou</span><strong class="resumo-valor cor-entrada">${moeda(entrou)}</strong></span>
+        <span class="resumo-linha"><span class="resumo-rotulo">Dinheiro que saiu</span><strong class="resumo-valor cor-gasto">${moeda(saiu)}</strong></span>
+        <span class="resumo-linha resumo-total"><span class="resumo-rotulo">Sobrou</span><strong class="resumo-valor ${entrou - saiu < 0 ? 'cor-gasto' : 'cor-entrada'}">${moeda(entrou - saiu)}</strong></span>
+        <span class="barra-rodape"><span>${plural(doMes.length, 'registro', 'registros')} no mês</span><span>Ver todos ›</span></span>
+      </button>`;
+    if (gastos.length) html += secaoHTML('gastos', 'Para onde foi o dinheiro', barrasHTML(gastos, saiu, 'gastos'));
+    if (formas.length) html += secaoHTML('formas', 'Como você pagou', barrasHTML(formas, saiu, 'formas'));
+    if (entradas.length) html += secaoHTML('entradas', 'De onde veio o dinheiro', barrasHTML(entradas, entrou, 'entradas'));
     caixa.innerHTML = html;
+
+    $$('[data-secao]', caixa).forEach((b) => b.addEventListener('click', () => abrirRelDetalhe(b.dataset.secao, Number(b.dataset.indice))));
+    $$('[data-secao-toda]', caixa).forEach((b) => b.addEventListener('click', () => abrirRelDetalhe(b.dataset.secaoToda, null)));
   }
-  $('btn-imprimir').onclick = () => window.print();
+
+  // ---- Detalhe de uma seção (ou de um item da seção) ----
+  function estatisticasHTML(itens, totalSecao, mostrarPct) {
+    const valores = itens.map((l) => Number(l.valor));
+    const total = valores.reduce((a, b) => a + b, 0);
+    const maior = itens.reduce((a, b) => (Number(b.valor) > Number(a.valor) ? b : a), itens[0]);
+    const menor = itens.reduce((a, b) => (Number(b.valor) < Number(a.valor) ? b : a), itens[0]);
+    const comFoto = itens.filter((l) => l.foto_path).length;
+    const linhas = [
+      ['Total', `<strong>${moeda(total)}</strong>`],
+      ['Quantidade de registros', itens.length],
+      ...(mostrarPct ? [['Parte do total', fmtPct(pctDe(total, totalSecao))]] : []),
+      ['Média por registro', moeda(total / itens.length)],
+      ['Maior valor', `${moeda(maior.valor)} <span class="item-info">(${dataCurta(maior.data)})</span>`],
+      ['Menor valor', `${moeda(menor.valor)} <span class="item-info">(${dataCurta(menor.data)})</span>`],
+      ['Com foto da notinha', `${comFoto} de ${itens.length}`]
+    ];
+    return linhas.map(([a, b]) => `<div class="detalhe-linha"><span>${a}</span><span>${b}</span></div>`).join('');
+  }
+
+  function listaPorDiaHTML(itens) {
+    let html = '', diaAtual = '', aberto = false;
+    itens.slice().sort((a, b) => (a.data < b.data ? 1 : -1)).forEach((l) => {
+      const d = new Date(l.data);
+      const chave = dataInput(d);
+      if (chave !== diaAtual) {
+        if (aberto) html += '</ul>';
+        html += `<h3 class="dia-titulo">${rotuloDia(d)}</h3><ul class="lista">`;
+        diaAtual = chave; aberto = true;
+      }
+      html += itemHTML(l);
+    });
+    return html + (aberto ? '</ul>' : '');
+  }
+
+  function abrirRelDetalhe(secao, indice) {
+    estado.relAtual = { secao, indice };
+    renderRelDetalhe();
+    mostrarTela('tela-rel-detalhe');
+  }
+
+  function renderRelDetalhe() {
+    const caixa = $('rel-det-conteudo');
+    const { secao, indice } = estado.relAtual || {};
+    const s = estado.rel && estado.rel.secoes[secao];
+    if (!s) { caixa.innerHTML = '<p class="vazio">Nada para mostrar.</p>'; return; }
+    const unico = indice !== null && indice !== undefined;
+    const grupos = unico ? [s.grupos[indice]].filter(Boolean) : s.grupos;
+    if (!grupos.length || !grupos[0].itens.length) { caixa.innerHTML = '<p class="vazio">Nenhum registro aqui.</p>'; return; }
+
+    const titulo = unico && secao !== 'todos' ? `${grupos[0].info.icone} ${escapar(grupos[0].info.nome)}` : s.titulo;
+    let html = `<h1 class="topo-titulo">${titulo}</h1><p class="sub" style="margin-top:4px">${nomeMes(estado.rel.mes)}</p>`;
+
+    if (secao === 'todos') {
+      const { entrou, saiu, doMes } = estado.rel;
+      html += `<div class="cartao">
+        <div class="detalhe-linha"><span>Dinheiro que entrou</span><span class="cor-entrada">${moeda(entrou)}</span></div>
+        <div class="detalhe-linha"><span>Dinheiro que saiu</span><span class="cor-gasto">${moeda(saiu)}</span></div>
+        <div class="detalhe-linha"><span>Sobrou</span><span>${moeda(entrou - saiu)}</span></div>
+        <div class="detalhe-linha"><span>Registros de gasto</span><span>${doMes.filter((l) => l.tipo === 'gasto').length}</span></div>
+        <div class="detalhe-linha"><span>Registros de entrada</span><span>${doMes.filter((l) => l.tipo === 'entrada').length}</span></div>
+        <div class="detalhe-linha"><span>Com foto da notinha</span><span>${doMes.filter((l) => l.foto_path).length} de ${doMes.length}</span></div>
+      </div>`;
+      html += `<p class="dica">Toque em um registro para ver tudo sobre ele.</p>` + listaPorDiaHTML(doMes);
+    } else {
+      if (!unico) {
+        const todos = grupos.flatMap((g) => g.itens);
+        html += `<div class="cartao">${estatisticasHTML(todos, s.total, false)}</div>`;
+      }
+      html += '<p class="dica">Toque em um registro para ver tudo sobre ele.</p>';
+      grupos.forEach((g) => {
+        html += `<div class="cartao grupo-rel">
+          ${unico ? '' : `<h2 class="secao-titulo">${g.info.icone} ${escapar(g.info.nome)}</h2>`}
+          ${estatisticasHTML(g.itens, s.total, true)}
+        </div>${listaPorDiaHTML(g.itens)}`;
+      });
+    }
+    caixa.innerHTML = html;
+    ligarItens(caixa);
+  }
+
+  async function recarregarRelDetalhe() {
+    await carregarRelatorios();
+    renderRelDetalhe();
+  }
+  $('rel-det-voltar').onclick = () => mostrarTela('tela-relatorios');
+
+  // ---------------------------------------------------------
+  // Impressão: prestação de contas completa
+  // ---------------------------------------------------------
+  $('btn-imprimir').onclick = () => {
+    if (!estado.rel || !estado.rel.doMes.length) { mostrarAviso('Não há registros neste mês para imprimir.'); return; }
+    abrirModal({
+      titulo: 'Imprimir prestação de contas',
+      corpo: `
+        <p style="text-align:center;margin-top:0">${nomeMes(estado.rel.mes)} · ${plural(estado.rel.doMes.length, 'registro', 'registros')}</p>
+        <label class="campo-rotulo" for="imp-destinatario">Para quem é a prestação de contas <span class="opcional">(se quiser)</span></label>
+        <input id="imp-destinatario" type="text" maxlength="80" value="${escapar(armazenamento.ler('imp_destinatario') || '')}" placeholder="Nome do idoso">
+        <label class="campo-rotulo" for="imp-responsavel">Quem cuidou das contas <span class="opcional">(se quiser)</span></label>
+        <input id="imp-responsavel" type="text" maxlength="80" value="${escapar(armazenamento.ler('imp_responsavel') || '')}" placeholder="Nome do responsável">
+        <label class="linha-check"><input type="checkbox" id="imp-fotos" checked> Incluir as fotos das notinhas</label>`,
+      botoes: [
+        { texto: '🖨️ Gerar e imprimir', classe: 'btn-primario', acao: () => {
+          const opcoes = {
+            destinatario: $('imp-destinatario').value.trim(),
+            responsavel: $('imp-responsavel').value.trim(),
+            fotos: $('imp-fotos').checked
+          };
+          armazenamento.gravar('imp_destinatario', opcoes.destinatario);
+          armazenamento.gravar('imp_responsavel', opcoes.responsavel);
+          imprimir(opcoes);
+        } },
+        { texto: 'Cancelar', classe: 'btn-secundario' }
+      ]
+    });
+  };
+
+  async function imprimir(opcoes) {
+    abrirModal({ titulo: 'Preparando o relatório…', corpo: '<div class="spinner" style="margin:10px auto"></div><p style="text-align:center">Isso pode levar alguns segundos.</p>' });
+    try {
+      const html = await montarImpressao(opcoes);
+      const area = $('impressao');
+      area.innerHTML = html;
+      const imgs = $$('img', area);
+      await Promise.race([
+        Promise.all(imgs.map((img) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; })))),
+        new Promise((r) => setTimeout(r, 20000))
+      ]);
+      fecharModal();
+      setTimeout(() => window.print(), 100);
+    } catch (e) {
+      fecharModal();
+      mostrarAviso(mensagemErro(e));
+    }
+  }
+  window.addEventListener('afterprint', () => { $('impressao').innerHTML = ''; });
+
+  async function montarImpressao({ destinatario, responsavel, fotos }) {
+    const { mes, anterior, doMes, doAnterior, entrou, saiu } = estado.rel;
+    const lanc = doMes.slice().sort((a, b) => (a.data < b.data ? -1 : 1));
+    const numero = new Map(lanc.map((l, i) => [l.id, i + 1]));
+    const ultimoDia = new Date(mes.getFullYear(), mes.getMonth() + 1, 0);
+    const comFoto = lanc.filter((l) => l.foto_path);
+    const t = (s) => escapar(s);
+    const catNome = (l) => t(categoria(l.categoria_id).nome);
+
+    let h = `<div class="imp">
+      <header class="imp-cab">
+        <h1>Prestação de Contas</h1>
+        <p class="imp-sub">Controle de gastos da casa — ${t(nomeMes(mes))}</p>
+      </header>
+      <table class="imp-info"><tbody>
+        <tr><th>Período</th><td>${dataCurta(inicioMes(mes))} a ${dataCurta(ultimoDia)}</td></tr>
+        ${destinatario ? `<tr><th>Destinatário</th><td>${t(destinatario)}</td></tr>` : ''}
+        ${responsavel ? `<tr><th>Responsável pelas contas</th><td>${t(responsavel)}</td></tr>` : ''}
+        <tr><th>Emitido em</th><td>${new Date().toLocaleDateString('pt-BR')} às ${horaCurta(new Date().toISOString())}</td></tr>
+        <tr><th>Total de registros</th><td>${lanc.length} (${lanc.filter((l) => l.tipo === 'gasto').length} gastos e ${lanc.filter((l) => l.tipo === 'entrada').length} entradas)</td></tr>
+        <tr><th>Registros com comprovante</th><td>${comFoto.length} de ${lanc.length}${fotos && comFoto.length ? ' — fotos no Anexo, ao final' : ''}</td></tr>
+      </tbody></table>`;
+
+    // 1. Resumo
+    const saiuAntes = somar(doAnterior, 'gasto'), entrouAntes = somar(doAnterior, 'entrada');
+    h += `<h2>1. Resumo do período</h2>
+      <table><thead><tr><th></th><th class="num">${t(nomeMes(mes))}</th><th class="num">${t(nomeMes(anterior))}</th><th class="num">Diferença</th></tr></thead><tbody>
+        <tr><td>Dinheiro que entrou</td><td class="num">${moeda(entrou)}</td><td class="num">${moeda(entrouAntes)}</td><td class="num">${moeda(entrou - entrouAntes)}</td></tr>
+        <tr><td>Dinheiro que saiu</td><td class="num">${moeda(saiu)}</td><td class="num">${moeda(saiuAntes)}</td><td class="num">${moeda(saiu - saiuAntes)}</td></tr>
+        <tr class="imp-total"><td>Saldo do mês (entrou − saiu)</td><td class="num">${moeda(entrou - saiu)}</td><td class="num">${moeda(entrouAntes - saiuAntes)}</td><td class="num">${moeda((entrou - saiu) - (entrouAntes - saiuAntes))}</td></tr>
+      </tbody></table>`;
+
+    // 2, 3, 4. Tabelas por grupo
+    const tabelaGrupos = (grupos, total, rotulo) => `
+      <table><thead><tr><th>${rotulo}</th><th class="num">Registros</th><th class="num">Total</th><th class="num">%</th><th class="num">Média</th><th class="num">Maior valor</th></tr></thead><tbody>
+      ${grupos.map((g) => `<tr><td>${t(g.info.nome)}</td><td class="num">${g.itens.length}</td><td class="num">${moeda(g.total)}</td><td class="num">${fmtPct(pctDe(g.total, total))}</td><td class="num">${moeda(g.total / g.itens.length)}</td><td class="num">${moeda(Math.max(...g.itens.map((l) => Number(l.valor))))}</td></tr>`).join('')}
+      <tr class="imp-total"><td>Total</td><td class="num">${grupos.reduce((s, g) => s + g.itens.length, 0)}</td><td class="num">${moeda(total)}</td><td class="num">100%</td><td></td><td></td></tr>
+      </tbody></table>`;
+    const gastosCat = porCategoria(lanc, 'gasto');
+    const formas = porForma(lanc);
+    const entradasCat = porCategoria(lanc, 'entrada');
+    h += `<h2>2. Gastos por categoria</h2>${gastosCat.length ? tabelaGrupos(gastosCat, saiu, 'Categoria') : '<p>Nenhum gasto no período.</p>'}`;
+    h += `<h2>3. Gastos por forma de pagamento</h2>${formas.length ? tabelaGrupos(formas, saiu, 'Forma de pagamento') : '<p>Nenhum gasto no período.</p>'}`;
+    h += `<h2>4. Entradas de dinheiro por origem</h2>${entradasCat.length ? tabelaGrupos(entradasCat, entrou, 'Origem') : '<p>Nenhuma entrada no período.</p>'}`;
+
+    // 5. Registro detalhado com saldo acumulado
+    h += `<h2 class="quebra">5. Registro detalhado de todos os lançamentos</h2>
+      <p class="imp-nota">Em ordem de data. O saldo acumulado considera apenas os registros deste mês.</p>
+      <table class="imp-detalhe"><thead><tr><th>Nº</th><th>Data</th><th>Hora</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Pagamento</th><th>Comprov.</th><th class="num">Entrada</th><th class="num">Saída</th><th class="num">Saldo</th></tr></thead><tbody>`;
+    let saldo = 0, diaAtual = '', entDia = 0, saiDia = 0;
+    const fecharDia = () => { if (diaAtual) h += `<tr class="imp-dia"><td colspan="8">Total do dia ${diaAtual}</td><td class="num">${moeda(entDia)}</td><td class="num">${moeda(saiDia)}</td><td class="num">${moeda(saldo)}</td></tr>`; };
+    lanc.forEach((l) => {
+      const dia = dataCurta(l.data);
+      if (dia !== diaAtual) { fecharDia(); diaAtual = dia; entDia = 0; saiDia = 0; }
+      const v = Number(l.valor);
+      if (l.tipo === 'entrada') { saldo += v; entDia += v; } else { saldo -= v; saiDia += v; }
+      h += `<tr><td>${numero.get(l.id)}</td><td>${dia}</td><td>${horaCurta(l.data)}</td><td>${l.tipo === 'gasto' ? 'Gasto' : 'Entrada'}</td><td>${catNome(l)}</td><td>${t(l.descricao || '—')}</td><td>${l.tipo === 'gasto' ? nomeForma(l.forma_pagamento) : '—'}</td><td>${l.foto_path ? (fotos ? 'Sim (anexo)' : 'Sim') : 'Não'}</td><td class="num">${l.tipo === 'entrada' ? moeda(v) : ''}</td><td class="num">${l.tipo === 'gasto' ? moeda(v) : ''}</td><td class="num">${moeda(saldo)}</td></tr>`;
+    });
+    fecharDia();
+    h += `<tr class="imp-total"><td colspan="8">Total do mês</td><td class="num">${moeda(entrou)}</td><td class="num">${moeda(saiu)}</td><td class="num">${moeda(entrou - saiu)}</td></tr></tbody></table>`;
+
+    // 6. Detalhamento por categoria
+    h += '<h2 class="quebra">6. Detalhamento por categoria</h2>';
+    [...gastosCat.map((g) => ({ ...g, rot: 'Gasto' })), ...entradasCat.map((g) => ({ ...g, rot: 'Entrada' }))].forEach((g) => {
+      h += `<h3>${t(g.info.nome)} <span class="imp-nota">(${g.rot} — ${plural(g.itens.length, 'registro', 'registros')} — ${moeda(g.total)})</span></h3>
+        <table><thead><tr><th>Nº</th><th>Data</th><th>Hora</th><th>Descrição</th>${g.rot === 'Gasto' ? '<th>Pagamento</th>' : ''}<th>Comprov.</th><th class="num">Valor</th></tr></thead><tbody>
+        ${g.itens.slice().sort((a, b) => (a.data < b.data ? -1 : 1)).map((l) => `<tr><td>${numero.get(l.id)}</td><td>${dataCurta(l.data)}</td><td>${horaCurta(l.data)}</td><td>${t(l.descricao || '—')}</td>${g.rot === 'Gasto' ? `<td>${nomeForma(l.forma_pagamento)}</td>` : ''}<td>${l.foto_path ? 'Sim' : 'Não'}</td><td class="num">${moeda(l.valor)}</td></tr>`).join('')}
+        <tr class="imp-total"><td colspan="${g.rot === 'Gasto' ? 6 : 5}">Total</td><td class="num">${moeda(g.total)}</td></tr></tbody></table>`;
+    });
+
+    // 7. Anexo com os comprovantes
+    if (fotos && comFoto.length) {
+      h += '<h2 class="quebra">7. Anexo — fotos dos comprovantes</h2>';
+      for (const l of comFoto) {
+        const url = await urlDaFoto(l.foto_path);
+        h += `<div class="imp-comp">
+          <p><strong>Lançamento nº ${numero.get(l.id)}</strong> — ${dataCurta(l.data)} às ${horaCurta(l.data)} — ${l.tipo === 'gasto' ? 'Gasto' : 'Entrada'} — ${catNome(l)} — <strong>${moeda(l.valor)}</strong>${l.tipo === 'gasto' ? ` — ${nomeForma(l.forma_pagamento)}` : ''}${l.descricao ? ` — ${t(l.descricao)}` : ''}</p>
+          ${url ? `<img src="${url}" alt="Comprovante do lançamento ${numero.get(l.id)}">` : '<p><em>Não foi possível carregar esta foto.</em></p>'}
+        </div>`;
+      }
+    }
+
+    // Assinaturas
+    h += `<div class="imp-assin">
+      <p>Declaro que as informações acima correspondem aos gastos e às entradas de dinheiro registrados no período de ${dataCurta(inicioMes(mes))} a ${dataCurta(ultimoDia)}.</p>
+      <p>Local e data: ____________________________________________</p>
+      <div class="imp-assin-linhas">
+        <div><span></span>${responsavel ? t(responsavel) : 'Responsável pelas contas'}</div>
+        <div><span></span>${destinatario ? t(destinatario) : 'Destinatário'}</div>
+      </div>
+    </div></div>`;
+    return h;
+  }
 
   // ---------------------------------------------------------
   // Ajustes: categorias
