@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f6f3">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Minhas Contas</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ CARREGANDO ============ -->
+  <section id="tela-carregando" class="tela ativa tela-centro">
+    <div class="spinner" aria-hidden="true"></div>
+    <p>Carregando…</p>
+  </section>
+
+  <!-- ============ LOGIN ============ -->
+  <section id="tela-login" class="tela tela-centro">
+    <div class="logo-grande" aria-hidden="true">🏠</div>
+    <h1>Minhas Contas</h1>
+    <p class="sub">Entre com seu e-mail e senha.<br>Isso só é pedido uma vez.</p>
+    <form id="form-login" class="cartao form" novalidate>
+      <label for="login-email">E-mail</label>
+      <input id="login-email" type="email" autocomplete="username" inputmode="email" required>
+      <label for="login-senha">Senha</label>
+      <input id="login-senha" type="password" autocomplete="current-password" required>
+      <p id="login-erro" class="erro" role="alert"></p>
+      <button type="submit" class="btn btn-primario btn-bloco">Entrar</button>
+    </form>
+  </section>
+
+  <!-- ============ PIN ============ -->
+  <section id="tela-pin" class="tela tela-centro">
+    <div class="logo-grande" aria-hidden="true">🔒</div>
+    <h1 id="pin-titulo">Digite sua senha</h1>
+    <p id="pin-sub" class="sub">São 4 números.</p>
+    <div class="pin-bolinhas" id="pin-bolinhas" aria-live="polite">
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <p id="pin-erro" class="erro" role="alert"></p>
+    <div class="teclado" id="teclado-pin"></div>
+    <button id="btn-esqueci-pin" class="btn-link" type="button">Esqueci minha senha de 4 números</button>
+  </section>
+
+  <!-- ============ INÍCIO ============ -->
+  <section id="tela-inicio" class="tela com-nav">
+    <header class="topo">
+      <div>
+        <p class="topo-saudacao" id="saudacao">Olá!</p>
+        <h1 class="topo-titulo" id="inicio-mes">Este mês</h1>
+      </div>
+    </header>
+
+    <div class="cartao resumo">
+      <div class="resumo-linha">
+        <span class="resumo-rotulo"><span aria-hidden="true">⬆️</span> Dinheiro que entrou</span>
+        <strong class="resumo-valor cor-entrada" id="res-entrou">R$ 0,00</strong>
+      </div>
+      <div class="resumo-linha">
+        <span class="resumo-rotulo"><span aria-hidden="true">⬇️</span> Dinheiro que saiu</span>
+        <strong class="resumo-valor cor-gasto" id="res-saiu">R$ 0,00</strong>
+      </div>
+      <div class="resumo-linha resumo-total">
+        <span class="resumo-rotulo">Quanto sobrou</span>
+        <strong class="resumo-valor" id="res-sobrou">R$ 0,00</strong>
+      </div>
+    </div>
+
+    <div class="acoes">
+      <button class="btn-acao btn-acao-gasto" id="btn-novo-gasto" type="button">
+        <span class="btn-acao-icone" aria-hidden="true">➖</span>
+        <span>Registrar gasto</span>
+      </button>
+      <button class="btn-acao btn-acao-entrada" id="btn-nova-entrada" type="button">
+        <span class="btn-acao-icone" aria-hidden="true">➕</span>
+        <span>Registrar dinheiro recebido</span>
+      </button>
+      <button class="btn-acao btn-acao-voz" id="btn-voz" type="button">
+        <span class="btn-acao-icone" aria-hidden="true">🎤</span>
+        <span>Falar o que gastou ou recebeu</span>
+      </button>
+    </div>
+
+    <h2 class="secao-titulo">Últimos registros</h2>
+    <ul class="lista" id="lista-ultimos"></ul>
+  </section>
+
+  <!-- ============ REGISTRO (passo a passo) ============ -->
+  <section id="tela-registro" class="tela">
+    <header class="topo topo-voltar">
+      <button class="btn-voltar" id="reg-voltar" type="button" aria-label="Voltar">
+        <span aria-hidden="true">←</span> Voltar
+      </button>
+      <span class="passos" id="reg-passos"></span>
+    </header>
+    <p id="reg-voz" class="voz-disse oculto"></p>
+
+    <!-- Passo: valor -->
+    <div class="passo" id="passo-valor">
+      <h1 class="passo-titulo" id="titulo-valor">Quanto você gastou?</h1>
+      <div class="visor" id="visor-valor" aria-live="polite">R$ 0</div>
+      <div class="teclado" id="teclado-valor"></div>
+      <button class="btn btn-primario btn-bloco btn-grande" id="btn-valor-ok" type="button">Continuar</button>
+    </div>
+
+    <!-- Passo: categoria -->
+    <div class="passo" id="passo-categoria">
+      <h1 class="passo-titulo" id="titulo-categoria">Com o que foi?</h1>
+      <div class="grade-categorias" id="grade-categorias"></div>
+    </div>
+
+    <!-- Passo: forma de pagamento -->
+    <div class="passo" id="passo-forma">
+      <h1 class="passo-titulo">Como você pagou?</h1>
+      <div class="lista-formas">
+        <button class="btn-forma" data-forma="pix" type="button"><span aria-hidden="true">📱</span> Pix</button>
+        <button class="btn-forma" data-forma="dinheiro" type="button"><span aria-hidden="true">💵</span> Dinheiro</button>
+        <button class="btn-forma" data-forma="debito" type="button"><span aria-hidden="true">💳</span> Cartão de débito</button>
+      </div>
+    </div>
+
+    <!-- Passo: confirmar -->
+    <div class="passo" id="passo-confirmar">
+      <h1 class="passo-titulo">Está tudo certo?</h1>
+      <div class="cartao confirmacao" id="confirmacao-resumo"></div>
+
+      <div class="cartao">
+        <p class="campo-rotulo">Foto da notinha <span class="opcional">(se quiser)</span></p>
+        <div id="foto-previa" class="foto-previa oculto">
+          <img id="foto-previa-img" alt="Foto da notinha">
+          <button class="btn btn-secundario" id="btn-remover-foto" type="button">Tirar a foto</button>
+        </div>
+        <div class="botoes-foto" id="botoes-foto">
+          <label class="btn btn-secundario">
+            <span aria-hidden="true">📷</span> Tirar foto
+            <input type="file" accept="image/*" capture="environment" id="input-camera" class="oculto-acessivel">
+          </label>
+          <label class="btn btn-secundario">
+            <span aria-hidden="true">🖼️</span> Escolher imagem
+            <input type="file" accept="image/*" id="input-galeria" class="oculto-acessivel">
+          </label>
+        </div>
+
+        <label class="campo-rotulo" for="reg-descricao">Observação <span class="opcional">(se quiser)</span></label>
+        <input id="reg-descricao" type="text" maxlength="200" placeholder="Ex.: Farmácia do centro">
+
+        <label class="campo-rotulo" for="reg-data">Dia</label>
+        <input id="reg-data" type="date">
+      </div>
+
+      <p id="reg-erro" class="erro" role="alert"></p>
+      <button class="btn btn-sucesso btn-bloco btn-grande" id="btn-salvar" type="button">✔ Sim, salvar</button>
+    </div>
+  </section>
+
+  <!-- ============ HISTÓRICO ============ -->
+  <section id="tela-historico" class="tela com-nav">
+    <header class="topo"><h1 class="topo-titulo">Histórico</h1></header>
+    <div class="nav-mes">
+      <button class="btn-mes" data-mes="-1" type="button" aria-label="Mês anterior">◀</button>
+      <strong id="hist-mes">—</strong>
+      <button class="btn-mes" data-mes="1" type="button" aria-label="Próximo mês">▶</button>
+    </div>
+    <div class="filtros" role="tablist">
+      <button class="filtro ativo" data-filtro="todos" type="button">Todos</button>
+      <button class="filtro" data-filtro="gasto" type="button">Gastos</button>
+      <button class="filtro" data-filtro="entrada" type="button">Entradas</button>
+    </div>
+    <select id="hist-categoria" class="select-categoria" aria-label="Filtrar por categoria">
+      <option value="">Todas as categorias</option>
+    </select>
+    <div id="lista-historico"></div>
+  </section>
+
+  <!-- ============ RELATÓRIOS ============ -->
+  <section id="tela-relatorios" class="tela com-nav">
+    <header class="topo"><h1 class="topo-titulo">Relatórios</h1></header>
+    <div class="nav-mes">
+      <button class="btn-mes" data-mes="-1" type="button" aria-label="Mês anterior">◀</button>
+      <strong id="rel-mes">—</strong>
+      <button class="btn-mes" data-mes="1" type="button" aria-label="Próximo mês">▶</button>
+    </div>
+    <div id="rel-conteudo"></div>
+    <button class="btn btn-secundario btn-bloco nao-imprimir" id="btn-imprimir" type="button">🖨️ Imprimir ou salvar em PDF</button>
+  </section>
+
+  <!-- ============ AJUSTES ============ -->
+  <section id="tela-ajustes" class="tela com-nav">
+    <header class="topo"><h1 class="topo-titulo">Ajustes</h1></header>
+
+    <div class="cartao">
+      <p class="campo-rotulo">Tamanho da letra</p>
+      <div class="linha-fonte">
+        <button class="btn btn-secundario" id="btn-fonte-menos" type="button" aria-label="Diminuir letra">A−</button>
+        <span id="fonte-exemplo">Exemplo de texto</span>
+        <button class="btn btn-secundario" id="btn-fonte-mais" type="button" aria-label="Aumentar letra">A+</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <p class="campo-rotulo">Categorias</p>
+      <div class="filtros">
+        <button class="filtro ativo" data-cat-tipo="gasto" type="button">De gasto</button>
+        <button class="filtro" data-cat-tipo="entrada" type="button">De entrada</button>
+      </div>
+      <ul class="lista lista-cat" id="lista-cat-ajustes"></ul>
+      <button class="btn btn-secundario btn-bloco" id="btn-nova-categoria" type="button">➕ Nova categoria</button>
+    </div>
+
+    <div class="cartao">
+      <button class="btn btn-secundario btn-bloco" id="btn-trocar-pin" type="button">🔒 Trocar senha de 4 números</button>
+      <button class="btn btn-perigo-suave btn-bloco" id="btn-sair" type="button">Sair da conta</button>
+    </div>
+  </section>
+
+  <!-- ============ NAVEGAÇÃO INFERIOR ============ -->
+  <nav class="nav-inferior oculto" id="nav-inferior" aria-label="Menu principal">
+    <button data-tela="tela-inicio" class="ativo" type="button"><span aria-hidden="true">🏠</span>Início</button>
+    <button data-tela="tela-historico" type="button"><span aria-hidden="true">📜</span>Histórico</button>
+    <button data-tela="tela-relatorios" type="button"><span aria-hidden="true">📊</span>Relatórios</button>
+    <button data-tela="tela-ajustes" type="button"><span aria-hidden="true">⚙️</span>Ajustes</button>
+  </nav>
+
+  <!-- ============ JANELA (modal) ============ -->
+  <div class="fundo-modal oculto" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <div class="modal">
+      <h2 id="modal-titulo"></h2>
+      <div id="modal-corpo"></div>
+      <div class="modal-botoes" id="modal-botoes"></div>
+    </div>
+  </div>
+
+  <!-- ============ AVISO (toast) ============ -->
+  <div class="aviso oculto" id="aviso" role="status" aria-live="polite">
+    <span id="aviso-texto"></span>
+    <button id="aviso-acao" class="aviso-acao oculto" type="button">Desfazer</button>
+  </div>
+
+  <!-- Supabase (versão fixada) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/voz.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
